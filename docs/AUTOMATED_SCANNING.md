@@ -2,7 +2,7 @@
 
 ## Overview
 
-EasyChecks now includes automated accessibility scanning powered by **axe-core**, a world-leading accessibility testing engine developed by Deque Labs.
+EasyChecks includes automated accessibility scanning powered by **axe-core**, a world-leading accessibility testing engine developed by Deque Labs.
 
 ### What is axe-core?
 
@@ -10,7 +10,7 @@ EasyChecks now includes automated accessibility scanning powered by **axe-core**
 - Detects **WCAG 2.1 Level A/AA violations** automatically
 - Used by major organizations (Microsoft, IBM, Google, etc.)
 - Fast, accurate, and regularly updated
-- ~40+ accessibility rules covering:
+- Dozens of rules covering:
   - Color contrast
   - Form labels
   - Image alt text
@@ -82,91 +82,65 @@ as the reason. It never suggests *conforme*: axe covers only part of each criter
 
 ## Usage
 
-### 1. Launch Scan in Audit Detail View
-
-```
-1. Go to any audit (or create a new one)
-2. Click "Lancer le scan automatique" button
-3. Wait 10-15 seconds for scan to complete
-4. Review violations by impact level
-5. Apply suggestions or dismiss individually
-```
-
-### 2. Apply Suggestions
-
-**Option A: Apply single suggestion**
-```
-Click on a suggestion → Status updated in real-time
-```
-
-**Option B: Apply all suggestions**
-```
-Click "Appliquer toutes les suggestions" → All criteria updated at once
-```
+1. Ouvrir un audit (ou en créer un) : le panneau de scan est sous les informations générales.
+2. Cliquer sur « Lancer le scan automatique » (jusqu'à 30 secondes).
+3. Consulter les violations par niveau d'impact.
+4. Appliquer une suggestion en cliquant dessus, ou « Appliquer toutes les suggestions ». Si des statuts déjà saisis vont être remplacés, une confirmation est demandée.
 
 ---
 
 ## Architecture & Files
 
-### Main Components
-
 | File | Purpose |
 |------|---------|
-| `src/utils/accessibilityScanner.ts` | Core scanning logic using axe-core |
-| `src/components/audit/ScanButton.vue` | UI for launching scans & viewing results |
-| `src/views/AuditDetailView.vue` | Integration point for scan suggestions |
-
-### Key Functions
-
-```typescript
-// Scan a URL for accessibility violations
-// noinspection JSAnnotator
-
-async function scanAccessibility(url: string): Promise<AccessibilityScanResult>
-
-// Generate audit criteria suggestions based on violations
-function generateScanSuggestions(scan: AccessibilityScanResult): ScanSuggestions[]
-```
+| `src/utils/accessibilityScanner.ts` | `scanAccessibility` (iframe ou service), `generateScanSuggestions`, table `axeRuleToCriterion` |
+| `src/components/audit/ScanButton.vue` | UI: lancement, progression, erreurs, résultats |
+| `src/views/AuditDetailView.vue` | Applique les suggestions au store |
+| `server/index.mjs` | Service de scan (Playwright + `@axe-core/playwright`) |
+| `server/ssrf.mjs` | Garde contre l'accès aux réseaux privés |
+| `tests/unit/scannerMapping.spec.ts`, `tests/unit/ssrf.spec.ts` | Tests du mapping, des suggestions et de la garde SSRF |
 
 ### Data Structures
 
 ```typescript
-// Scan result structure
 interface AccessibilityScanResult {
   url: string
   timestamp: string
-  violations: Violation[]
-  violations_count: { critical, serious, moderate, minor }
+  violations: Array<{ id; impact; title; description; nodes: Array<{ html; message }> }>
+  violations_count: { critical; serious; moderate; minor }  // en nombre d'éléments
   passes: number
   inapplicable: number
   incomplete: number
 }
 
-// Suggestion for a criterion
 interface ScanSuggestions {
-  criterionId: string
-  suggestedStatus: 'c' | 'nc' | 'nt'
+  criterionId: string               // doit exister dans initialCriteria
+  suggestedStatus: 'c' | 'nc' | 'nt' // en pratique 'nc'
   reason: string
   violationIds: string[]
 }
 ```
 
+Le service renvoie les résultats axe allégés (violations complètes, autres catégories réduites à leurs `id`) ; le front les transforme avec le même code que pour l'iframe.
+
 ---
 
 ## Mapping: axe-core Rules → EasyChecks Criteria
 
-| axe Rule ID | EasyChecks Criterion | Impact |
-|-------------|---------------------|--------|
-| `color-contrast` | Contrastes | serious+ |
-| `image-alt` | Alternatives images | critical |
-| `label` | Libellés formulaire | serious |
-| `heading-order` | Hiérarchie titres | serious |
-| `page-has-heading-one` | Titre page | critical |
-| `document-title` | Titre page | critical |
-| `button-name` | Libellés boutons | critical |
-| `link-name` | Libellés liens | critical |
-| `html-has-lang` | Langue principale | serious |
-| `tabindex` | Navigation clavier | moderate |
+Défini dans `axeRuleToCriterion`. Les règles sans critère équivalent sont affichées dans la liste des violations mais ne produisent pas de suggestion.
+
+| axe rule | Critère (`id`) |
+|----------|----------------|
+| `color-contrast` | `contrastes` |
+| `image-alt`, `input-image-alt` | `alternatives-images` |
+| `label`, `select-name` | `libelles-formulaire` |
+| `link-name` | `liens-explicites` |
+| `heading-order`, `page-has-heading-one` | `hierarchie-titres` |
+| `document-title` | `titre-page` |
+| `html-has-lang` | `langue-page` |
+| `tabindex` | `navigation-clavier` |
+
+Pour ajouter une règle : l'ajouter à `axeRuleToCriterion` avec l'`id` d'un critère existant (le test `scannerMapping.spec.ts` échoue sinon).
 
 ---
 
