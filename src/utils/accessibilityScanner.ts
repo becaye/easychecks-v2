@@ -39,118 +39,90 @@ export interface ScanSuggestions {
   violationIds: string[]
 }
 
-/**
- * Load axe-core dynamically to avoid bloating the bundle
- */
-async function loadAxe() {
-  // axe-core is already imported at the top level and available globally.
-  // We just need to ensure it's loaded
-  const axeModule = await import('axe-core')
-  return axeModule.default || axeModule
-}
+const SCAN_API_URL: string = import.meta.env.VITE_SCAN_API_URL ?? ''
 
 /**
- * Scan a URL for accessibility issues using axe-core
- * Note: This scan happens in an iframe, so CORS headers must allow it
+ * Scan a URL for accessibility issues using axe-core.
+ * - Same-origin URLs are scanned in a hidden iframe (no server needed).
+ * - Any other URL goes through the scan service (`server/index.mjs`, Playwright + axe-core),
+ *   because browsers forbid reading a cross-origin page.
  */
 export async function scanAccessibility(url: string): Promise<AccessibilityScanResult> {
-  // Validate URL
-  const parsedUrl = new URL(url)
+  let parsedUrl: URL
+  try {
+    parsedUrl = new URL(url)
+  } catch {
+    throw new Error(`URL invalide : ${url}`)
+  }
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    throw new Error('Seules les URLs http(s) peuvent être scannées.')
+  }
 
-  // Iframe-based scanning only works for same-origin URLs
-  const appOrigin = window.location.origin
-  const targetOrigin = parsedUrl.origin
-  if (targetOrigin !== appOrigin) {
+  const results =
+    parsedUrl.origin === window.location.origin
+      ? await scanViaIframe(parsedUrl)
+      : await scanViaApi(parsedUrl)
+
+  return transformAxeResults(url, results)
+}
+
+async function scanViaApi(url: URL): Promise<AxeResults> {
+  let response: Response
+  try {
+    response = await fetch(`${SCAN_API_URL}/api/scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: url.toString() }),
+      signal: AbortSignal.timeout(60_000),
+    })
+  } catch {
     throw new Error(
-      `URL cross-origin détectée (${targetOrigin} ≠ ${appOrigin}).\n` +
-      `Le scan par iframe ne peut pas accéder au contenu cross-origin par mesure de sécurité navigateur.\n` +
-      `Pour scanner ce site, le serveur cible doit autoriser l'intégration en iframe (en-têtes X-Frame-Options / CSP).`,
+      'Le service de scan est injoignable. Démarrez-le avec « npm run scan-server » puis réessayez.',
     )
   }
 
-  let iframe: HTMLIFrameElement | null = null
+  const body = await response.json().catch(() => null)
+  if (!response.ok) {
+    throw new Error(body?.error ?? `Le service de scan a répondu avec le statut ${response.status}.`)
+  }
+  return body as AxeResults
+}
+
+async function scanViaIframe(url: URL): Promise<AxeResults> {
+  const frame = document.createElement('iframe')
+  frame.src = url.toString()
+  frame.style.display = 'none'
+  frame.setAttribute('title', 'Accessibility scan iframe')
+  document.body.appendChild(frame)
+
   try {
-    // Create iframe to isolate the scan
-    const frame = document.createElement('iframe')
-    iframe = frame
-    frame.src = parsedUrl.toString()
-    frame.style.display = 'none'
-    frame.setAttribute('title', 'Accessibility scan iframe')
-    document.body.appendChild(iframe)
-
-    // Wait for iframe to load
-    await new Promise((resolve, reject) => {
-      let timeout: ReturnType<typeof setTimeout> | null = null
-      frame.onload = () => {
-        clearTimeout(timeout!)
-        resolve(null)
-      }
-      frame.onerror = () => {
-        clearTimeout(timeout!)
-        reject(new Error(`Failed to load URL: ${url}`))
-      }
-      timeout = setTimeout(() => {
-        reject(new Error(`Timeout loading URL: ${url}`))
-      }, 15000)
-    })
-
-    // Inject axe-core into iframe via CDN
-    const iframeDoc = frame.contentDocument
-    if (!iframeDoc) {
-      throw new Error('Cannot access iframe document')
-    }
-
-    const scriptEl = iframeDoc.createElement('script')
-    scriptEl.src = 'https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.7.2/axe.min.js'
-    iframeDoc.head.appendChild(scriptEl)
-
-    // Wait for axe to load
     await new Promise<void>((resolve, reject) => {
-      let timeout: ReturnType<typeof setTimeout> | null = null
-      scriptEl.onload = () => {
-        clearTimeout(timeout!)
+      const timeout = setTimeout(
+        () => reject(new Error(`Délai dépassé au chargement de ${url}`)),
+        15000,
+      )
+      frame.onload = () => {
+        clearTimeout(timeout)
         resolve()
       }
-      scriptEl.onerror = () => {
-        clearTimeout(timeout!)
-        reject(new Error('Failed to load axe-core library'))
-      }
-      timeout = setTimeout(() => {
-        reject(new Error('Timeout loading axe-core'))
-      }, 10000)
     })
 
-    // Run axe scan in iframe
-    const results: AxeResults = await new Promise((resolve, reject) => {
-      const iframeWindow = frame.contentWindow
-      if (!iframeWindow) {
-        reject(new Error('Cannot access iframe window'))
-        return
-      }
+    const frameWindow = frame.contentWindow as (Window & { axe?: { run: (opts?: object) => Promise<AxeResults> } }) | null
+    if (!frameWindow) throw new Error("Impossible d'accéder à la fenêtre de l'iframe")
 
-      // Access axe from iframe window's global scope
-      const axeGlobal = (iframeWindow as any).axe
-      if (!axeGlobal || typeof axeGlobal.run !== 'function') {
-        reject(new Error('axe-core not available in iframe'))
-        return
-      }
+    // Inject the locally installed axe-core (no CDN, same version as the app)
+    const axeModule = await import('axe-core')
+    const axe = axeModule.default ?? axeModule
+    ;(frameWindow as unknown as { eval: (code: string) => void }).eval(axe.source)
+    if (!frameWindow.axe) throw new Error('axe-core indisponible dans l\'iframe')
 
-      axeGlobal
-        .run({ runOnly: { type: 'all' } })
-        .then(resolve)
-        .catch(reject)
-    })
-
-    // Transform axe results to our format
-    return transformAxeResults(url, results)
-  } catch (error) {
-    console.error('Accessibility scan failed:', error)
-    if (error instanceof Error) throw error
-    throw new Error(typeof error === 'string' ? error : JSON.stringify(error))
+    return await frameWindow.axe.run({ runOnly: { type: 'tag', values: AXE_TAGS } })
   } finally {
-    iframe?.remove()
+    frame.remove()
   }
 }
+
+const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']
 
 /**
  * Transform axe-core results to our scan format

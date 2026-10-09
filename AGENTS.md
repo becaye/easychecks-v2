@@ -99,10 +99,10 @@ Project uses `@gouvminint/vue-dsfr` (Vue 3 wrapper for French Design System):
 
 ### 7. Automated Accessibility Scanning (axe-core)
 - **Lightweight frontend scanning** using axe-core (no backend required)
-- Runs in iframe to isolate scan from main app
+- Same-origin URL: hidden iframe + local axe-core. Any other URL: scan service in `server/` (Playwright + axe-core, `npm run scan-server`), with an SSRF guard in `server/ssrf.mjs`
 - Detects ~70-80% of automated-detectable WCAG violations
 - Maps axe violations to audit criteria (`axeRuleToCriterion`); suggests `nc` only (no violation never means conforme)
-- **Limitations**: Requires public URLs (no auth), no CORS restrictions
+- **Limitations**: public URLs only (no auth); the scan service must be running for cross-origin URLs
 - See `docs/AUTOMATED_SCANNING.md` for full documentation
 
 ---
@@ -169,5 +169,5 @@ npm run type-check             # TypeScript validation (Vue 3.x strict mode)
 | Change UI layout/header | Edit `AppLayout.vue`, `AppHeader.vue`, `AppFooter.vue` |
 | Add new route | Edit `router/index.ts`, create view in `views/` |
 | Map new axe rules to criteria | Update `axeRuleToCriterion` in `accessibilityScanner.ts` |
-| Implement backend scanning (Phase 2) | Create Node.js service with Playwright + axe-core (see AUTOMATED_SCANNING.md) |
+| Change scan service behaviour | `server/index.mjs` (env vars in AUTOMATED_SCANNING.md); keep `server/ssrf.mjs` checks on every request |
 

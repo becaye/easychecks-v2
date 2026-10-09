@@ -1,5 +1,5 @@
 <template>
-  <div v-if="isSameOrigin" class="scan-panel fr-p-3w fr-mb-3w" :class="{ 'scan-panel--active': isScanning }">
+  <div class="scan-panel fr-p-3w fr-mb-3w" :class="{ 'scan-panel--active': isScanning }">
     <div class="scan-panel__header">
       <h2 class="fr-h5 fr-mb-1w">Scan d'accessibilité automatique (axe-core)</h2>
       <p class="fr-text--sm fr-text--grey fr-mb-0">
@@ -19,7 +19,7 @@
 
     <!-- Scanning in progress -->
     <div v-if="isScanning" class="fr-alert fr-alert--info fr-mb-2w" role="status">
-      <p class="fr-text--sm">Scan en cours… Cela peut prendre 10 à 15 secondes.</p>
+      <p class="fr-text--sm">Scan en cours… Cela peut prendre jusqu'à 30 secondes.</p>
     </div>
 
     <!-- Scan error -->
@@ -139,14 +139,6 @@ const props = defineProps<{
   auditId: string
   auditUrl: string
 }>()
-
-const isSameOrigin = computed(() => {
-  try {
-    return new URL(props.auditUrl).origin === window.location.origin
-  } catch {
-    return false
-  }
-})
 
 const emit = defineEmits<{
   'apply-suggestion': [suggestion: ScanSuggestions]

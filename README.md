@@ -36,3 +36,14 @@ npm run dev
 ```sh
 npm run build
 ```
+
+### Scan automatique de sites externes
+
+Le scan d'un site autre que l'application passe par un petit service (Playwright + axe-core) :
+
+```sh
+npx playwright install chromium   # une seule fois
+npm run scan-server               # http://127.0.0.1:3001, à lancer en plus de `npm run dev`
+```
+
+Détails, variables d'environnement et sécurité : [docs/AUTOMATED_SCANNING.md](docs/AUTOMATED_SCANNING.md).

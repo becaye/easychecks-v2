@@ -23,29 +23,49 @@ EasyChecks now includes automated accessibility scanning powered by **axe-core**
 
 ## How It Works
 
-### 1. Frontend Scanning (No Backend Required)
+Two scan modes, chosen automatically from the audited URL:
 
-The scan happens entirely in the browser using an iframe:
+| URL | Mode | Needs |
+|-----|------|-------|
+| Same origin as the app | Hidden iframe + locally installed axe-core | Nothing |
+| Any other site | Scan service (`server/index.mjs`): headless Chromium (Playwright) + `@axe-core/playwright` | `npm run scan-server` |
 
 ```
-┌─────────────────────────────────────┐
-│   EasyChecks Vue App (Main Frame)   │
-└────────────────┬────────────────────┘
-                 │
-                 ▼
-        ┌─────────────────┐
-        │  Target URL     │ (in iframe)
-        │  + axe-core     │
-        └─────────────────┘
-                 │
-                 ▼
-        Scan Results (JSON)
-                 │
-                 ▼
-  Pre-fill audit criteria suggestions
+EasyChecks (Vue)  --POST /api/scan {url}-->  Scan service  -->  Chromium + axe-core  -->  target site
+        ^                                         |
+        +------------ axe results (JSON) --------+
 ```
 
-### 2. Scan Results
+### Running the scan service
+
+```sh
+npx playwright install chromium   # once
+npm run scan-server               # http://127.0.0.1:3001
+npm run dev                       # Vite proxies /api to the service
+```
+
+Environment variables:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SCAN_PORT` | `3001` | Port of the service (also read by `vite.config.ts` for the proxy) |
+| `SCAN_HOST` | `127.0.0.1` | Interface to listen on |
+| `SCAN_ALLOW_PRIVATE` | unset | `1` allows scanning localhost / private networks. **Local development only** |
+| `SCAN_ALLOWED_ORIGIN` | unset | Sets CORS when the app and the service are on different origins |
+| `SCAN_MAX_CONCURRENT` | `2` | Parallel scans before answering HTTP 429 |
+| `VITE_SCAN_API_URL` | empty (same origin) | Front-end: base URL of the service in production |
+
+In production, serve the service behind the same host as the app (reverse proxy on `/api`) or set `VITE_SCAN_API_URL` and `SCAN_ALLOWED_ORIGIN`.
+
+### Security
+
+The service fetches arbitrary URLs on behalf of the user, so it refuses anything that is not public `http(s)`:
+loopback, private ranges, link-local (cloud metadata `169.254.169.254`), CGNAT and their IPv6 equivalents
+(`server/ssrf.mjs`). The check is applied to the target, to every redirect and to every sub-request made by the page.
+Residual risk: DNS rebinding between our check and Chromium's own resolution. If the service is exposed publicly,
+also run it in a network namespace/container without access to your internal network, and add authentication or rate limiting.
+
+### Scan results
 
 For each violation detected:
 - **Impact level**: critical, serious, moderate, minor
@@ -53,12 +73,10 @@ For each violation detected:
 - **HTML snippets** of problematic elements
 - **Helpful descriptions** for fixing
 
-### 3. Suggestions
+### Suggestions
 
-Based on scan results, EasyChecks suggests:
-- ✓ **Conforme (c)** for criteria with no violations
-- ✗ **Non-conforme (nc)** for criteria with violations
-- Reasons explaining which axe rules detected issues
+Based on scan results, EasyChecks suggests **Non-conforme (nc)** for criteria with violations, with the axe rules
+as the reason. It never suggests *conforme*: axe covers only part of each criterion, so "no violation" is not a verdict.
 
 ---
 
@@ -154,136 +172,8 @@ interface ScanSuggestions {
 
 ## Limitations & Caveats
 
-### When Scans Work Best ✅
-- **Public URLs** (no authentication required)
-- **Static content** (no JavaScript-rendered UI)
-- **No CORS restrictions**
-- **Fast-loading pages** (< 15 seconds)
-
-### When Scans May Fail ❌
-- **Authentication required** (login walls)
-- **CORS headers block iframe** (most common failure)
-- **JavaScript-heavy apps** (need E2E testing instead)
-- **Timeouts** on slow servers
-- **Site behind firewall** (not accessible from browser)
-
-### Error Handling
-
-If scan fails:
-```
-Error messages explain possible causes:
-- "CORS" → Server blocks iframe access
-- "Timeout" → Page took too long to load
-- "Site inaccessible" → DNS error, 404, etc.
-```
-
----
-
-## Phase 2: Backend Scanning (Optional Future Enhancement)
-
-For more robust scanning of protected sites:
-
-### Proposed Backend Solution
-
-```typescript
-// Node.js backend using Playwright + axe-core
-
-import { chromium } from 'playwright'
-import { axe, toHaveNoViolations } from 'jest-axe'
-
-async function scanWithPlaywright(url: string) {
-  const browser = await chromium.launch()
-  const page = await browser.newPage()
-  
-  await page.goto(url, { waitUntil: 'networkidle' })
-  
-  // Inject axe-core and run scan
-  const results = await page.evaluate(async () => {
-    return await window.axe.run()
-  })
-  
-  await browser.close()
-  return results
-}
-```
-
-### Advantages Over Frontend
-- Works with **password-protected** sites
-- Handles **complex JavaScript** apps
-- **Longer timeout** (handles slow pages)
-- Can run **parallel scans**
-- Better **error handling** for network issues
-
-### When to Implement
-- When clients request scans of internal/protected sites
-- For **automated CI/CD integration**
-- For **batch scanning** of large site portfolios
-
----
-
-## Development Notes
-
-### Adding New Criterion Mapping
-
-To map new axe rules to criteria:
-
-1. Find axe rule ID in [axe-core Rule Index](https://github.com/dequelabs/axe-core/blob/develop/doc/rule-descriptions.md)
-2. Add mapping in `generateScanSuggestions()`:
-
-```typescript
-const violationMap = {
-  'new-axe-rule-id': { criterion: 'your-criterion-id', status: 'nc' },
-  // ...existing mappings...
-}
-```
-
-3. Test mapping with test URL
-
-### Testing Scans Locally
-
-```bash
-# Start dev server
-npm run dev
-
-# Create or open an audit
-# Navigate to /audits/:id
-# Click "Lancer le scan automatique"
-# Use public test sites:
-# - https://www.w3.org/
-# - https://www.bbc.co.uk/ (complex site)
-# - https://example.com (simple site)
-```
-
-### Performance Considerations
-
-- Scan happens **in main thread** (blocks UI briefly)
-- For production, consider:
-  - Web Workers for background scanning
-  - Debouncing multiple rapid scans
-  - Caching results for same URL
-
----
-
-## FAQ
-
-**Q: Why isn't the scan finding all accessibility issues?**
-A: axe-core is excellent but not 100% detection. It catches ~70-80% of automated-detectable issues. Manual testing still needed for context-dependent issues.
-
-**Q: Can I scan localhost?**
-A: Yes, if running EasyChecks on localhost too. Otherwise, localhost is not accessible from browser iframe.
-
-**Q: Does the scan send data to external servers?**
-A: No. axe-core library is bundled locally (from CDN on first load). Scan happens entirely in your browser.
-
-**Q: How do I scan sites behind authentication?**
-A: Use the planned Phase 2 backend solution with Playwright (not yet implemented).
-
----
-
-## Resources
-
-- [axe-core GitHub](https://github.com/dequelabs/axe-core)
-- [axe DevTools](https://www.deque.com/axe/devtools/) (browser extension)
-- [WCAG 2.1 Guidelines](https://www.w3.org/WAI/WCAG21/quickref/)
-- [Deque Labs Blog](https://www.deque.com/blog/)
-
+- Public pages only: no authentication, no pages behind a firewall.
+- axe detects only a fraction of RGAA/WCAG issues; manual review of every criterion is still required.
+- Pages that need user interaction (multi-step forms, modals) are scanned in their initial state.
+- A page that answers HTTP 4xx/5xx, or does not load within 30 s, is reported as an error.
+- The service must be running for non-same-origin URLs; otherwise the UI explains how to start it.
