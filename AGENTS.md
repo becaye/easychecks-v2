@@ -97,6 +97,15 @@ Project uses `@gouvminint/vue-dsfr` (Vue 3 wrapper for French Design System):
 - Focus management on route changes
 - Semantic HTML throughout components
 
+### 7. Automated Accessibility Scanning (axe-core)
+- **Lightweight frontend scanning** using axe-core (no backend required)
+- Runs in iframe to isolate scan from main app
+- Detects ~70-80% of automated-detectable WCAG violations
+- Maps axe violations to audit criteria automatically
+- Suggests pre-filling criteria with status based on scan results
+- **Limitations**: Requires public URLs (no auth), no CORS restrictions
+- See `docs/AUTOMATED_SCANNING.md` for full documentation
+
 ---
 
 ## Essential Files to Know
@@ -111,9 +120,12 @@ Project uses `@gouvminint/vue-dsfr` (Vue 3 wrapper for French Design System):
 | `src/components/layout/SaveStatusAlert.vue` | DSFR alert component for auto-save feedback (saving/saved/error) |
 | `src/utils/storage.ts` | Unified storage abstraction (IndexedDB + localStorage fallback) |
 | `src/utils/indexedDbStorage.ts` | IndexedDB wrapper implementation |
+| `src/utils/accessibilityScanner.ts` | axe-core integration for automated scanning |
+| `src/components/audit/ScanButton.vue` | UI component for launching and viewing scan results |
 | `src/utils/calculateSummary.ts` | Summary calculation (total, c, nc, nt, na, okPercentage %) |
 | `src/utils/exportJson.ts` + `exportHtml.ts` | Export orchestration; handle status labels |
 | `src/components/audit/AuditForm.vue` | New/edit audit form; emits submit with metadata |
+| `docs/AUTOMATED_SCANNING.md` | Complete guide for automated accessibility scanning feature |
 
 ---
 
@@ -157,4 +169,6 @@ npm run type-check             # TypeScript validation (Vue 3.x strict mode)
 | Add status calculation | Enhance `calculateSummary()` |
 | Change UI layout/header | Edit `AppLayout.vue`, `AppHeader.vue`, `AppFooter.vue` |
 | Add new route | Edit `router/index.ts`, create view in `views/` |
+| Map new axe rules to criteria | Update `violationMap` in `accessibilityScanner.ts` |
+| Implement backend scanning (Phase 2) | Create Node.js service with Playwright + axe-core (see AUTOMATED_SCANNING.md) |
 

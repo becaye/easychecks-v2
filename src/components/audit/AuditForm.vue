@@ -47,10 +47,10 @@
       is-textarea
     />
 
-    <div class="fr-mt-3w">
+    <div v-if="!hideActions" class="fr-mt-3w">
       <DsfrButton
         type="submit"
-        label="Créer l'audit"
+        :label="submitLabel ?? 'Créer l\'audit'"
         icon="ri-check-line"
       />
       <DsfrButton
@@ -68,6 +68,18 @@
 import { reactive, ref } from 'vue'
 import { DsfrButton, DsfrInputGroup } from '@gouvminint/vue-dsfr'
 
+const props = defineProps<{
+  initial?: {
+    title?: string
+    url?: string
+    date?: string
+    auditor?: string
+    generalComment?: string
+  }
+  submitLabel?: string
+  hideActions?: boolean
+}>()
+
 const emit = defineEmits<{
   submit: [data: {
     title: string
@@ -80,11 +92,11 @@ const emit = defineEmits<{
 }>()
 
 const form = reactive({
-  title: '',
-  url: '',
-  date: new Date().toISOString().split('T')[0],
-  auditor: '',
-  generalComment: '',
+  title: props.initial?.title ?? '',
+  url: props.initial?.url ?? '',
+  date: props.initial?.date ?? new Date().toISOString().split('T')[0],
+  auditor: props.initial?.auditor ?? '',
+  generalComment: props.initial?.generalComment ?? '',
 })
 
 const errors = reactive({
@@ -121,4 +133,22 @@ function handleSubmit() {
     generalComment: form.generalComment.trim() || undefined,
   })
 }
+
+// Update form when `initial` prop changes (useful for modal editing)
+import { watch } from 'vue'
+watch(
+  () => props.initial,
+  (next) => {
+    if (!next) return
+    form.title = next.title ?? ''
+    form.url = next.url ?? ''
+    form.date = next.date ?? new Date().toISOString().split('T')[0]
+    form.auditor = next.auditor ?? ''
+    form.generalComment = next.generalComment ?? ''
+  }
+)
+
+// Expose a programmatic submit method to parent components (used by modal footer)
+import { defineExpose } from 'vue'
+defineExpose({ submit: handleSubmit })
 </script>

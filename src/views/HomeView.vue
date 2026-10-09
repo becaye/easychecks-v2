@@ -5,7 +5,7 @@
     <section class="fr-mb-6w" aria-labelledby="home-heading">
       <h1 id="home-heading" class="fr-h1">Easy Checks</h1>
       <p class="fr-text--lg fr-mb-3w">
-        Réalisez des audits d'accessibilité rapides inspirés des
+        Réalisez des audits <strong>rapides</strong> d'accessibilité inspirés des
         <a href="https://www.w3.org/WAI/test-evaluate/preliminary/" target="_blank" rel="noopener noreferrer">
           Easy Checks du W3C
           <span class="sr-only">(ouvre dans un nouvel onglet)</span>
