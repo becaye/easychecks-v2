@@ -67,7 +67,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
 import { DsfrBreadcrumb, DsfrAlert, DsfrButton, DsfrModal } from '@gouvminint/vue-dsfr'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -83,10 +83,12 @@ import type { ScanSuggestions } from '@/utils/accessibilityScanner'
 const route = useRoute()
 const store = useAuditStore()
 
-onMounted(async () => {
-  await store.loadAudits()
-  store.setCurrentAudit(route.params.id as string)
-})
+// Re-open the audit when navigating between audits without remounting the view
+watch(
+  () => route.params.id,
+  (id) => store.openAudit(id as string),
+  { immediate: true },
+)
 
 const audit = computed(() => store.currentAudit)
 
@@ -138,6 +140,19 @@ function applyScanSuggestion(suggestion: ScanSuggestions) {
  */
 function applyAllScanSuggestions(suggestions: ScanSuggestions[]) {
   if (!audit.value) return
+  // Don't silently overwrite statuses the auditor already set by hand
+  const overwritten = suggestions.filter((suggestion) => {
+    const current = audit.value!.criteriaResults.find((r) => r.criterionId === suggestion.criterionId)?.status
+    return current && current !== 'nt' && current !== suggestion.suggestedStatus
+  })
+  if (
+    overwritten.length > 0 &&
+    !window.confirm(
+      `${overwritten.length} critère(s) ont déjà un statut saisi qui sera remplacé. Continuer ?`,
+    )
+  ) {
+    return
+  }
   for (const suggestion of suggestions) {
     store.updateCriterionStatus(
       audit.value.id,

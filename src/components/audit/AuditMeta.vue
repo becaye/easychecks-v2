@@ -9,10 +9,11 @@
       <div class="fr-col-12 fr-col-md-6">
         <dt class="fr-text--bold">URL</dt>
         <dd>
-          <a :href="audit.url" target="_blank" rel="noopener noreferrer">
+          <a v-if="isHttpUrl(audit.url)" :href="audit.url" target="_blank" rel="noopener noreferrer">
             {{ audit.url }}
             <span class="sr-only">(ouvre dans un nouvel onglet)</span>
           </a>
+          <template v-else>{{ audit.url }}</template>
         </dd>
       </div>
       <div class="fr-col-12 fr-col-md-6">
@@ -34,6 +35,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Audit } from '@/types/audit'
+import { isHttpUrl } from '@/utils/url'
 
 const props = defineProps<{ audit: Audit }>()
 

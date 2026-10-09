@@ -74,6 +74,7 @@ function onStatusChange(status: CriterionResult['status']) {
 }
 
 function onCommentBlur() {
+  if (localComment.value === (props.result.comment ?? '')) return
   emit('commentChange', props.criterion.id, localComment.value)
 }
 

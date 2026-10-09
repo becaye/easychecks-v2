@@ -33,7 +33,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, watch } from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
 import { DsfrBreadcrumb, DsfrAlert } from '@gouvminint/vue-dsfr'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -45,10 +45,12 @@ import { useAuditStore } from '@/stores/auditStore'
 const route = useRoute()
 const store = useAuditStore()
 
-onMounted(async () => {
-  await store.loadAudits()
-  store.setCurrentAudit(route.params.id as string)
-})
+// Re-open the audit when navigating between audits without remounting the view
+watch(
+  () => route.params.id,
+  (id) => store.openAudit(id as string),
+  { immediate: true },
+)
 
 const audit = computed(() => store.currentAudit)
 const summary = computed(() => store.auditSummary)

@@ -1,6 +1,8 @@
 import type { Audit } from '@/types/audit'
 import { initialCriteria } from '@/data/initialCriteria'
 import { calculateSummary } from '@/utils/calculateSummary'
+import { isHttpUrl } from '@/utils/url'
+import { downloadBlob, sanitizeFilename, statusLabel } from '@/utils/exportCommon'
 
 export function exportAuditAsHtml(audit: Audit): void {
   const summary = calculateSummary(audit)
@@ -37,7 +39,7 @@ export function exportAuditAsHtml(audit: Audit): void {
     h1 { font-size: 1.75rem; border-bottom: 3px solid #000091; padding-bottom: .5rem; }
     h2 { font-size: 1.25rem; margin-top: 2rem; }
     table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
-    th, td { border: 1px solid #ddd; padding: .5rem .75rem; text-align: left; vertical-align: top; }
+    th, td { border: 1px solid #ddd; padding: .5rem .75rem; text-align: left; vertical-align: top; white-space: pre-wrap; }
     th { background: #f0f0f0; font-weight: 700; }
     .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1rem; margin: 1.5rem 0; }
     .stat { border: 2px solid #ddd; border-radius: 4px; padding: 1rem; text-align: center; }
@@ -61,7 +63,7 @@ export function exportAuditAsHtml(audit: Audit): void {
     <h2>Informations générales</h2>
     <dl>
       <dt>Site / Service</dt><dd>${escHtml(audit.title)}</dd>
-      <dt>URL</dt><dd><a href="${escHtml(audit.url)}">${escHtml(audit.url)}</a></dd>
+      <dt>URL</dt><dd>${isHttpUrl(audit.url) ? `<a href="${escHtml(audit.url)}">${escHtml(audit.url)}</a>` : escHtml(audit.url)}</dd>
       <dt>Date de l'audit</dt><dd>${escHtml(audit.date)}</dd>
       <dt>Auditeur·rice</dt><dd>${escHtml(audit.auditor)}</dd>
       ${audit.generalComment ? `<dt>Commentaire général</dt><dd>${escHtml(audit.generalComment)}</dd>` : ''}
@@ -96,27 +98,7 @@ export function exportAuditAsHtml(audit: Audit): void {
 </html>`
 
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `rapport-${sanitizeFilename(audit.title)}-${audit.date}.html`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
-function statusLabel(status: string | null): string {
-  switch (status) {
-    case 'c':
-      return 'Conforme'
-    case 'nc':
-      return 'Non conforme'
-    case 'nt':
-      return 'Non testé'
-    case 'na':
-      return 'Non applicable'
-    default:
-      return 'Non traité'
-  }
+  downloadBlob(blob, `rapport-${sanitizeFilename(audit.title)}-${audit.date}.html`)
 }
 
 function priorityText(priority: string): string {
@@ -138,8 +120,4 @@ function escHtml(str: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-}
-
-function sanitizeFilename(name: string): string {
-  return name.replace(/[^a-zA-Z0-9À-ÿ\-_]/g, '-').toLowerCase()
 }

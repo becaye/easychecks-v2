@@ -68,22 +68,24 @@ export async function scanAccessibility(url: string): Promise<AccessibilityScanR
     )
   }
 
+  let iframe: HTMLIFrameElement | null = null
   try {
     // Create iframe to isolate the scan
-    const iframe = document.createElement('iframe')
-    iframe.src = parsedUrl.toString()
-    iframe.style.display = 'none'
-    iframe.setAttribute('title', 'Accessibility scan iframe')
+    const frame = document.createElement('iframe')
+    iframe = frame
+    frame.src = parsedUrl.toString()
+    frame.style.display = 'none'
+    frame.setAttribute('title', 'Accessibility scan iframe')
     document.body.appendChild(iframe)
 
     // Wait for iframe to load
     await new Promise((resolve, reject) => {
       let timeout: ReturnType<typeof setTimeout> | null = null
-      iframe.onload = () => {
+      frame.onload = () => {
         clearTimeout(timeout!)
         resolve(null)
       }
-      iframe.onerror = () => {
+      frame.onerror = () => {
         clearTimeout(timeout!)
         reject(new Error(`Failed to load URL: ${url}`))
       }
@@ -93,7 +95,7 @@ export async function scanAccessibility(url: string): Promise<AccessibilityScanR
     })
 
     // Inject axe-core into iframe via CDN
-    const iframeDoc = iframe.contentDocument
+    const iframeDoc = frame.contentDocument
     if (!iframeDoc) {
       throw new Error('Cannot access iframe document')
     }
@@ -120,7 +122,7 @@ export async function scanAccessibility(url: string): Promise<AccessibilityScanR
 
     // Run axe scan in iframe
     const results: AxeResults = await new Promise((resolve, reject) => {
-      const iframeWindow = iframe.contentWindow
+      const iframeWindow = frame.contentWindow
       if (!iframeWindow) {
         reject(new Error('Cannot access iframe window'))
         return
@@ -139,15 +141,14 @@ export async function scanAccessibility(url: string): Promise<AccessibilityScanR
         .catch(reject)
     })
 
-    // Clean up iframe
-    document.body.removeChild(iframe)
-
     // Transform axe results to our format
     return transformAxeResults(url, results)
   } catch (error) {
     console.error('Accessibility scan failed:', error)
     if (error instanceof Error) throw error
     throw new Error(typeof error === 'string' ? error : JSON.stringify(error))
+  } finally {
+    iframe?.remove()
   }
 }
 
@@ -193,40 +194,37 @@ function transformAxeResults(
 }
 
 /**
- * Generate suggestions for audit criteria based on scan results
+ * Map axe rule ids to audit criteria ids (must exist in `initialCriteria`).
+ */
+export const axeRuleToCriterion: Record<string, { criterion: string; status: 'nc' | 'nt' }> = {
+  'color-contrast': { criterion: 'contrastes', status: 'nc' },
+  'image-alt': { criterion: 'alternatives-images', status: 'nc' },
+  'input-image-alt': { criterion: 'alternatives-images', status: 'nc' },
+  'label': { criterion: 'libelles-formulaire', status: 'nc' },
+  'select-name': { criterion: 'libelles-formulaire', status: 'nc' },
+  'link-name': { criterion: 'liens-explicites', status: 'nc' },
+  'heading-order': { criterion: 'hierarchie-titres', status: 'nc' },
+  'page-has-heading-one': { criterion: 'hierarchie-titres', status: 'nc' },
+  'document-title': { criterion: 'titre-page', status: 'nc' },
+  'html-has-lang': { criterion: 'langue-page', status: 'nc' },
+  'tabindex': { criterion: 'navigation-clavier', status: 'nc' },
+}
+
+/**
+ * Generate suggestions for audit criteria based on scan results.
+ * Only violations are suggested: axe covers a small part of the criteria, so
+ * "no violation found" must never be turned into "conforme".
  */
 export function generateScanSuggestions(
   scan: AccessibilityScanResult,
 ): ScanSuggestions[] {
   const suggestions: ScanSuggestions[] = []
 
-  // Map axe violations to audit criteria
-  const violationMap: Record<string, { criterion: string; status: 'nc' | 'nt' }> = {
-    // WCAG 2.1 Level A/AA violations
-    'color-contrast': { criterion: 'contrastes', status: 'nc' },
-    'image-alt': { criterion: 'alternatives-images', status: 'nc' },
-    'input-image-alt': { criterion: 'alternatives-images', status: 'nc' },
-    'label': { criterion: 'libelles-formulaire', status: 'nc' },
-    'aria-required-attr': { criterion: 'aria-attributs', status: 'nc' },
-    'aria-roles': { criterion: 'roles-aria', status: 'nc' },
-    'button-name': { criterion: 'libelles-boutons', status: 'nc' },
-    'link-name': { criterion: 'libelles-liens', status: 'nc' },
-    'heading-order': { criterion: 'hierarchie-titres', status: 'nc' },
-    'duplicate-id': { criterion: 'attributs-id', status: 'nc' },
-    'page-has-heading-one': { criterion: 'titre-page', status: 'nc' },
-    'document-title': { criterion: 'titre-page', status: 'nc' },
-    'html-has-lang': { criterion: 'langue-principale', status: 'nc' },
-    'list': { criterion: 'listes-semantiques', status: 'nc' },
-    'listitem': { criterion: 'listes-semantiques', status: 'nc' },
-    'select-name': { criterion: 'libelles-formulaire', status: 'nc' },
-    'tabindex': { criterion: 'navigation-clavier', status: 'nc' },
-  }
-
   // Group violations by criterion
   const violationsByCriterion: Record<string, string[]> = {}
 
   for (const violation of scan.violations) {
-    const mapping = violationMap[violation.id]
+    const mapping = axeRuleToCriterion[violation.id]
     if (mapping) {
       if (!violationsByCriterion[mapping.criterion]) {
         violationsByCriterion[mapping.criterion] = []
@@ -243,21 +241,6 @@ export function generateScanSuggestions(
       reason: `Violations détectées : ${violationIds.join(', ')}`,
       violationIds,
     })
-  }
-
-  // Suggest 'c' (conforme) for criteria with no violations
-  const allMappedCriteria = new Set(
-    Object.values(violationMap).map((m) => m.criterion),
-  )
-  for (const criterion of allMappedCriteria) {
-    if (!violationsByCriterion[criterion]) {
-      suggestions.push({
-        criterionId: criterion,
-        suggestedStatus: 'c',
-        reason: 'Aucune violation détectée par axe-core',
-        violationIds: [],
-      })
-    }
   }
 
   return suggestions

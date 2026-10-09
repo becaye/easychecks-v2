@@ -12,6 +12,11 @@ export class IndexedDbStorage {
   private db: IDBDatabase | null = null
   private initialized: Promise<boolean>
 
+  /** Resolves to true once the database is open and usable. */
+  isReady(): Promise<boolean> {
+    return this.initialized
+  }
+
   constructor() {
     this.initialized = this.init()
   }
@@ -94,18 +99,30 @@ export class IndexedDbStorage {
         const transaction = this.db!.transaction(STORE_NAME, 'readwrite')
         const store = transaction.objectStore(STORE_NAME)
 
-        // Clear existing data and write new data
-        store.clear()
-        audits.forEach((audit) => {
-          store.add(audit)
-        })
-
         transaction.oncomplete = () => {
           resolve(true)
         }
 
         transaction.onerror = () => {
           resolve(false)
+        }
+
+        transaction.onabort = () => {
+          resolve(false)
+        }
+
+        try {
+          // Audits may be reactive proxies (Pinia), which structured clone rejects:
+          // serialize first, and do it before clear() so a failure cannot wipe the store.
+          const plain: Audit[] = JSON.parse(JSON.stringify(audits))
+
+          // Clear existing data and write new data
+          store.clear()
+          plain.forEach((audit) => {
+            store.add(audit)
+          })
+        } catch {
+          transaction.abort()
         }
       } catch {
         resolve(false)
