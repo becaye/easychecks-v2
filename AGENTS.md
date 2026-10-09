@@ -41,7 +41,8 @@ Key derived state (computed):
 - **Behavior**:
   - Load: IndexedDB first, then localStorage fallback
   - Save: Both IndexedDB and localStorage (redundancy)
-  - Auto-detect best backend on module init
+  - Backend availability is awaited (`indexedDbStorage.isReady()`), never assumed
+  - Audits are serialized to plain JSON before the IndexedDB write (Pinia proxies can't be structured-cloned); a failed write aborts the transaction instead of leaving the store cleared
 - **Key functions** in `src/utils/storage.ts`:
   - `loadAuditsFromStorage()` → Promise<Audit[]>
   - `saveAuditsToStorage(audits)` → Promise<void>
@@ -58,7 +59,7 @@ Status values are **single characters** used throughout:
 - `nc` = Non-conforme (inaccessible, blocks user)
 - `nt` = Non-testé (not yet tested)
 - `na` = Non-applicable (doesn't apply to this page)
-- `null` = Unset (initial state)
+- `null` = Legacy/unset; treated as `nt` in summaries. New audits start at `nt`
 
 ✅ See: `types/audit.ts` line 15, usage in `auditStore.ts` lines 101-117, 119-131
 
@@ -66,14 +67,14 @@ Status values are **single characters** used throughout:
 Views that display criteria must use `store.criteriaWithResults`:
 ```typescript
 // Returns { criterion, result } pairs for all criteria
-// Result defaults to null status + empty comment if not in audit
+// Result defaults to 'nt' status + empty comment if not in audit
 ```
 This ensures UI always shows **all criteria**, even untested ones.
 
 ### 3. Export Workflow
 - JSON export: `exportJson.ts` → includes summary + full criterion details with labels
 - HTML export: `exportHtml.ts` → styled report with tables, summary stats, breakable by page
-- Both functions handle status-to-label conversion internally
+- Both use the shared helpers in `exportCommon.ts` (status labels, filenames, `downloadBlob`)
 - Use `calculateSummary()` before export to get stats
 
 ### 4. Routing & View Hierarchy
@@ -99,10 +100,10 @@ Project uses `@gouvminint/vue-dsfr` (Vue 3 wrapper for French Design System):
 
 ### 7. Automated Accessibility Scanning (axe-core)
 - **Lightweight frontend scanning** using axe-core (no backend required)
-- Runs in iframe to isolate scan from main app
+- Same-origin URL: hidden iframe + local axe-core. Any other URL: scan service in `server/` (Playwright + axe-core, `npm run scan-server`), with an SSRF guard in `server/ssrf.mjs`
 - Detects ~70-80% of automated-detectable WCAG violations
 - Maps axe violations to audit criteria (`axeRuleToCriterion`); suggests `nc` only (no violation never means conforme)
-- **Limitations**: Requires public URLs (no auth), no CORS restrictions
+- **Limitations**: public URLs only (no auth); the scan service must be running for cross-origin URLs
 - See `docs/AUTOMATED_SCANNING.md` for full documentation
 
 ---
@@ -124,6 +125,9 @@ Project uses `@gouvminint/vue-dsfr` (Vue 3 wrapper for French Design System):
 | `src/utils/calculateSummary.ts` | Summary calculation (total, c, nc, nt, na, okPercentage %) |
 | `src/utils/exportJson.ts` + `exportHtml.ts` | Export orchestration; handle status labels |
 | `src/components/audit/AuditForm.vue` | New/edit audit form; emits submit with metadata |
+| `src/utils/url.ts` | `isHttpUrl`: only http(s) URLs are accepted, stored and linked |
+| `src/utils/exportCommon.ts` | Shared export helpers |
+| `server/index.mjs` + `server/ssrf.mjs` | Scan service and its SSRF guard |
 | `docs/AUTOMATED_SCANNING.md` | Complete guide for automated accessibility scanning feature |
 
 ---
@@ -131,10 +135,12 @@ Project uses `@gouvminint/vue-dsfr` (Vue 3 wrapper for French Design System):
 ## Build & Development Workflow
 
 ```bash
-npm install                    # Install dependencies (Pinia 3.0.4, Vue 3.5.38)
-npm run dev                    # Start Vite dev server (localhost:5173)
+npm install                    # Install dependencies
+npm run dev                    # Start Vite dev server (localhost:5173); proxies /api to the scan service
+npm run scan-server            # Scan service (needs `npx playwright install chromium` once)
 npm run build                  # Prod build: vue-tsc type-check + Vite bundle
-npm run type-check             # TypeScript validation (Vue 3.x strict mode)
+npm run type-check             # TypeScript validation
+npx vitest run                 # Unit tests (tests/unit)
 ```
 
 - **Node requirement**: ^22.18.0 or >=24.12.0
@@ -146,14 +152,14 @@ npm run type-check             # TypeScript validation (Vue 3.x strict mode)
 ## Conventions & Gotchas
 
 1. **Always sync currentAudit with audits array** when mutating; use `currentAudit.value = { ...audit }` to trigger reactivity
-2. **Storage is now async**: `loadAuditsFromStorage()` and `saveAuditsToStorage()` return Promises; use `await` in views (onMounted hooks)
-3. **Save operations are non-blocking**: `persist()` and `persistWithStatus()` execute saves in background to keep debounce responsive
-4. **Status null handling**: Some fields allow `null` status; treat as "untested"
+2. **Storage is async**: `loadAuditsFromStorage()` and `saveAuditsToStorage()` return Promises. Views don't call them directly: `store.loadAudits()` loads once (pass `true` to force) and `store.openAudit(id)` loads then selects the audit
+3. **Save operations are non-blocking**: `persist()` and `persistWithStatus()` save in the background; `saveStatus` becomes `saved` only once the write succeeded, and `error` stays visible until the next successful save
+4. **Status null handling**: `null` is treated as "untested" (`nt`)
 5. **Timestamps are ISO strings**, not Dates (for JSON serialization)
 6. **French language throughout** — all labels, validation messages, UI text in French
 7. **UUID for audit IDs** — generated via `uuid` package; never hardcode
 8. **Utility function pattern**: Export helpers (json/html) use shared helpers from `exportCommon.ts` (sanitizeFilename, statusLabel, downloadBlob) plus `escHtml`
-9. **No API calls** — this is fully client-side; persistence = hybrid IndexedDB/localStorage only
+9. **Client-side app, one optional service** — persistence is local (IndexedDB/localStorage); the only network call is to the scan service for cross-origin scans
 10. **Computed properties are eager** — avoid expensive calculations in templates
 
 ---
@@ -169,5 +175,5 @@ npm run type-check             # TypeScript validation (Vue 3.x strict mode)
 | Change UI layout/header | Edit `AppLayout.vue`, `AppHeader.vue`, `AppFooter.vue` |
 | Add new route | Edit `router/index.ts`, create view in `views/` |
 | Map new axe rules to criteria | Update `axeRuleToCriterion` in `accessibilityScanner.ts` |
-| Implement backend scanning (Phase 2) | Create Node.js service with Playwright + axe-core (see AUTOMATED_SCANNING.md) |
+| Change scan service behaviour | `server/index.mjs` (env vars in AUTOMATED_SCANNING.md); keep `server/ssrf.mjs` checks on every request |
 
