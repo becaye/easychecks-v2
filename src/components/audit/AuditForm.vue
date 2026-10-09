@@ -65,8 +65,9 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { reactive, watch } from 'vue'
 import { DsfrButton, DsfrInputGroup } from '@gouvminint/vue-dsfr'
+import { isHttpUrl } from '@/utils/url'
 
 const props = defineProps<{
   initial?: {
@@ -91,10 +92,17 @@ const emit = defineEmits<{
   cancel: []
 }>()
 
+// Local date (toISOString would give the UTC day, i.e. yesterday just after midnight in France)
+function todayLocal(): string {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 const form = reactive({
   title: props.initial?.title ?? '',
   url: props.initial?.url ?? '',
-  date: props.initial?.date ?? new Date().toISOString().split('T')[0],
+  date: props.initial?.date ?? todayLocal(),
   auditor: props.initial?.auditor ?? '',
   generalComment: props.initial?.generalComment ?? '',
 })
@@ -113,10 +121,8 @@ function validate(): boolean {
   errors.auditor = form.auditor.trim() ? '' : "Le nom de l'auditeur·rice est requis."
 
   if (!errors.url && form.url.trim()) {
-    try {
-      new URL(form.url)
-    } catch {
-      errors.url = "L'URL n'est pas valide (exemple : https://exemple.fr)."
+    if (!isHttpUrl(form.url.trim())) {
+      errors.url = "L'URL n'est pas valide : elle doit commencer par http:// ou https:// (exemple : https://exemple.fr)."
     }
   }
 
@@ -135,20 +141,18 @@ function handleSubmit() {
 }
 
 // Update form when `initial` prop changes (useful for modal editing)
-import { watch } from 'vue'
 watch(
   () => props.initial,
   (next) => {
     if (!next) return
     form.title = next.title ?? ''
     form.url = next.url ?? ''
-    form.date = next.date ?? new Date().toISOString().split('T')[0]
+    form.date = next.date ?? todayLocal()
     form.auditor = next.auditor ?? ''
     form.generalComment = next.generalComment ?? ''
   }
 )
 
 // Expose a programmatic submit method to parent components (used by modal footer)
-import { defineExpose } from 'vue'
 defineExpose({ submit: handleSubmit })
 </script>

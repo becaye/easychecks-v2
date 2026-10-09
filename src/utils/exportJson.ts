@@ -1,6 +1,7 @@
 import type { Audit } from '@/types/audit'
 import { initialCriteria } from '@/data/initialCriteria'
 import { calculateSummary } from '@/utils/calculateSummary'
+import { downloadBlob, sanitizeFilename, statusLabel } from '@/utils/exportCommon'
 
 export function exportAuditAsJson(audit: Audit): void {
   const summary = calculateSummary(audit)
@@ -36,32 +37,4 @@ export function exportAuditAsJson(audit: Audit): void {
     type: 'application/json',
   })
   downloadBlob(blob, `audit-${sanitizeFilename(audit.title)}-${audit.date}.json`)
-}
-
-function statusLabel(status: string | null): string {
-  switch (status) {
-    case 'c':
-      return 'Conforme'
-    case 'nc':
-      return 'Non conforme'
-    case 'nt':
-      return 'Non testé'
-    case 'na':
-      return 'Non applicable'
-    default:
-      return 'Non traité'
-  }
-}
-
-function sanitizeFilename(name: string): string {
-  return name.replace(/[^a-zA-Z0-9À-ÿ\-_]/g, '-').toLowerCase()
-}
-
-function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
 }

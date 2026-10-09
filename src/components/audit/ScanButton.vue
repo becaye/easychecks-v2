@@ -1,7 +1,7 @@
 <template>
   <div v-if="isSameOrigin" class="scan-panel fr-p-3w fr-mb-3w" :class="{ 'scan-panel--active': isScanning }">
     <div class="scan-panel__header">
-      <h3 class="fr-h5 fr-mb-1w">Scan d'accessibilité automatique (axe-core)</h3>
+      <h2 class="fr-h5 fr-mb-1w">Scan d'accessibilité automatique (axe-core)</h2>
       <p class="fr-text--sm fr-text--grey fr-mb-0">
         Détecte les violations WCAG automatiquement sur l'URL cible.
       </p>
@@ -12,21 +12,20 @@
       <button
         class="fr-btn fr-btn--secondary fr-icon-search-line fr-mb-2w"
         @click="runScan"
-        :disabled="isScanning"
       >
         Lancer le scan automatique
       </button>
     </template>
 
     <!-- Scanning in progress -->
-    <div v-if="isScanning" class="fr-alert fr-alert--info fr-mb-2w">
-      <p class="fr-text--sm">⏳ Scan en cours... Cela peut prendre 10-15 secondes.</p>
+    <div v-if="isScanning" class="fr-alert fr-alert--info fr-mb-2w" role="status">
+      <p class="fr-text--sm">Scan en cours… Cela peut prendre 10 à 15 secondes.</p>
     </div>
 
     <!-- Scan error -->
-    <div v-if="scanError" class="fr-alert fr-alert--error fr-mb-2w">
+    <div v-if="scanError" class="fr-alert fr-alert--error fr-mb-2w" role="alert">
       <p class="fr-text--sm" style="white-space: pre-line">
-        ❌ Erreur du scan : {{ scanError }}
+        Erreur du scan : {{ scanError }}
       </p>
       <button class="fr-btn fr-btn--tertiary fr-btn--sm fr-mt-2w" @click="runScan">
         Réessayer
@@ -67,7 +66,7 @@
 
         <!-- Suggestions for audit criteria -->
         <div v-if="suggestions.length > 0" class="fr-mb-3w">
-          <h4 class="fr-h6 fr-mb-2w">Suggestions de pré-remplissage</h4>
+          <h3 class="fr-h6 fr-mb-2w">Suggestions de pré-remplissage</h3>
           <div class="suggestions-list">
             <button
               v-for="suggestion in suggestions"
@@ -77,7 +76,7 @@
               @click="applySuggestion(suggestion)"
               :title="`Appliquer: ${suggestion.reason}`"
             >
-              <span class="suggestion-item__status">{{ suggestion.suggestedStatus === 'c' ? '✓' : '✗' }}</span>
+              <span class="suggestion-item__status">{{ suggestion.suggestedStatus === 'c' ? 'Conforme' : 'Non conforme' }}</span>
               <span class="suggestion-item__id">{{ suggestion.criterionId }}</span>
               <span class="suggestion-item__reason">{{ suggestion.reason }}</span>
             </button>
@@ -89,7 +88,7 @@
 
         <!-- Violations details -->
         <div v-if="latestScan.violations.length > 0">
-          <h4 class="fr-h6 fr-mb-2w">Violations détectées ({{ latestScan.violations.length }})</h4>
+          <h3 class="fr-h6 fr-mb-2w">Violations détectées ({{ latestScan.violations.length }})</h3>
           <details
             v-for="violation in latestScan.violations"
             :key="violation.id"

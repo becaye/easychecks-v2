@@ -11,33 +11,14 @@ const STORAGE_KEY = 'easy-checks-audits'
  * This ensures audits are persisted reliably across different browser scenarios.
  */
 
-let useIndexedDb = false
-
-// Check if IndexedDB is supported and working
-async function initializeStorageBackend(): Promise<void> {
+// Resolved once IndexedDB is known to be open and usable (avoids racing the first load/save)
+async function isIndexedDbAvailable(): Promise<boolean> {
   try {
-    // Try to detect IndexedDB support by attempting to open it
-    if (typeof indexedDB !== 'undefined') {
-      const testDb = indexedDB.open('test-db-' + Date.now())
-      testDb.onsuccess = () => {
-        useIndexedDb = true
-        // Clean up test database
-        indexedDB.deleteDatabase('test-db-' + Date.now())
-      }
-      testDb.onerror = () => {
-        useIndexedDb = false
-      }
-      testDb.onblocked = () => {
-        useIndexedDb = false
-      }
-    }
+    return await indexedDbStorage.isReady()
   } catch {
-    useIndexedDb = false
+    return false
   }
 }
-
-// Initialize on module load
-initializeStorageBackend()
 
 /**
  * Load audits from the best available storage backend
@@ -45,7 +26,7 @@ initializeStorageBackend()
 export async function loadAuditsFromStorage(): Promise<Audit[]> {
   try {
     // Try IndexedDB first if it appears to be supported
-    if (useIndexedDb) {
+    if (await isIndexedDbAvailable()) {
       const audits = await indexedDbStorage.load()
       if (audits.length > 0) {
         return audits
@@ -79,7 +60,7 @@ export async function saveAuditsToStorage(audits: Audit[]): Promise<void> {
   let localStorageSuccess = false
 
   // Try IndexedDB first (non-blocking)
-  if (useIndexedDb) {
+  if (await isIndexedDbAvailable()) {
     try {
       indexedDbSuccess = await indexedDbStorage.save(audits)
     } catch {
@@ -108,7 +89,7 @@ export async function saveAuditsToStorage(audits: Audit[]): Promise<void> {
 export async function clearAuditsFromStorage(): Promise<void> {
   try {
     // Clear IndexedDB
-    if (useIndexedDb) {
+    if (await isIndexedDbAvailable()) {
       await indexedDbStorage.clear()
     }
 

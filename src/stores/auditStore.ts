@@ -32,14 +32,49 @@ export const useAuditStore = defineStore('audits', () => {
       )
       return {
         criterion,
-        result: result ?? { criterionId: criterion.id, status: null, comment: '' },
+        result: result ?? { criterionId: criterion.id, status: 'nt' as const, comment: '' },
       }
     })
   })
 
   // Actions
-  async function loadAudits() {
-    audits.value = await loadAuditsFromStorage()
+  // Load once: later calls reuse the first load so views never overwrite
+  // in-memory changes with a stale copy from storage. Use `force` to reload.
+  let loadPromise: Promise<void> | null = null
+  function loadAudits(force = false): Promise<void> {
+    if (!loadPromise || force) {
+      loadPromise = loadAuditsFromStorage().then((loaded) => {
+        audits.value = loaded.map(normalizeAudit)
+      })
+    }
+    return loadPromise
+  }
+
+  /** Load audits if needed, then make `id` the current audit. */
+  async function openAudit(id: string) {
+    await loadAudits()
+    setCurrentAudit(id)
+  }
+
+  // Audits saved before criteria were added/changed lack some results: fill the gaps with 'nt'.
+  function normalizeAudit(audit: Audit): Audit {
+    const existing = Array.isArray(audit.criteriaResults) ? audit.criteriaResults : []
+    const known = new Set(existing.map((r) => r.criterionId))
+    const missing: CriterionResult[] = initialCriteria
+      .filter((c) => !known.has(c.id))
+      .map((c) => ({ criterionId: c.id, status: 'nt' as const, comment: '' }))
+    if (missing.length === 0 && existing === audit.criteriaResults) return audit
+    return { ...audit, criteriaResults: [...existing, ...missing] }
+  }
+
+  // Returns the audit's result for a known criterion, creating it if the audit predates it.
+  function findOrCreateResult(audit: Audit, criterionId: string): CriterionResult | undefined {
+    const found = audit.criteriaResults.find((r) => r.criterionId === criterionId)
+    if (found) return found
+    if (!initialCriteria.some((c) => c.id === criterionId)) return undefined
+    const created: CriterionResult = { criterionId, status: 'nt', comment: '' }
+    audit.criteriaResults.push(created)
+    return created
   }
 
   function createAudit(data: {
@@ -105,10 +140,9 @@ export const useAuditStore = defineStore('audits', () => {
   ) {
     const audit = audits.value.find((a) => a.id === auditId)
     if (!audit) return
-    const result = audit.criteriaResults.find((r) => r.criterionId === criterionId)
-    if (result) {
-      result.status = status
-    }
+    const result = findOrCreateResult(audit, criterionId)
+    if (!result) return
+    result.status = status
     audit.updatedAt = new Date().toISOString()
     if (currentAudit.value?.id === auditId) {
       currentAudit.value = { ...audit }
@@ -119,10 +153,9 @@ export const useAuditStore = defineStore('audits', () => {
   function updateCriterionComment(auditId: string, criterionId: string, comment: string) {
     const audit = audits.value.find((a) => a.id === auditId)
     if (!audit) return
-    const result = audit.criteriaResults.find((r) => r.criterionId === criterionId)
-    if (result) {
-      result.comment = comment
-    }
+    const result = findOrCreateResult(audit, criterionId)
+    if (!result) return
+    result.comment = comment
     audit.updatedAt = new Date().toISOString()
     if (currentAudit.value?.id === auditId) {
       currentAudit.value = { ...audit }
@@ -142,24 +175,35 @@ export const useAuditStore = defineStore('audits', () => {
     exportAuditAsHtml(audit)
   }
 
-  function persist() {
-    // Save in background without awaiting (to keep debounce responsive)
-    saveAuditsToStorage(audits.value).catch(() => {
-      saveStatus.value = 'error'
-    })
+  function persist(): Promise<boolean> {
+    // Save in background without awaiting (to keep callers responsive)
+    return saveAuditsToStorage(audits.value).then(
+      () => true,
+      () => {
+        saveStatus.value = 'error'
+        return false
+      },
+    )
   }
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null
+  let saveSeq = 0
   function persistWithStatus() {
+    const seq = ++saveSeq
     saveStatus.value = 'saving'
-    persist()
     if (saveTimer) clearTimeout(saveTimer)
-    saveTimer = setTimeout(() => {
-      saveStatus.value = 'saved'
+    const started = Date.now()
+    persist().then((ok) => {
+      // A newer save is in flight, or the save failed ('error' stays visible)
+      if (seq !== saveSeq || !ok) return
+      const remaining = Math.max(0, 300 - (Date.now() - started))
       saveTimer = setTimeout(() => {
-        saveStatus.value = 'idle'
-      }, 3000)
-    }, 300)
+        saveStatus.value = 'saved'
+        saveTimer = setTimeout(() => {
+          saveStatus.value = 'idle'
+        }, 3000)
+      }, remaining)
+    })
   }
 
   return {
@@ -171,6 +215,7 @@ export const useAuditStore = defineStore('audits', () => {
     auditSummary,
     criteriaWithResults,
     loadAudits,
+    openAudit,
     createAudit,
     updateAudit,
     deleteAudit,

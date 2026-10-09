@@ -15,7 +15,7 @@
   - Holds array of `CriterionResult` objects (one per tested criterion)
   - Timestamps: `createdAt`, `updatedAt` (ISO format)
   
-- **Criterion**: Static accessibility criterion from `initialCriteria` (≈40+ French WCAG criteria)
+- **Criterion**: Static accessibility criterion from `initialCriteria` (15 criteria today)
   - Fields: id, title, description, help text, priority level (bloquant/majeur/mineur)
   - Never modified; acts as reference data
   
@@ -26,7 +26,7 @@
 
 ### State Management (Pinia Store)
 `useAuditStore` is the **single source of truth**:
-- `audits`: Full list persisted to localStorage
+- `audits`: Full list, persisted via `utils/storage.ts` (IndexedDB + localStorage); loaded once, missing criteria are filled in with `nt` on load
 - `currentAudit`: Currently viewed audit (set via `setCurrentAudit(id)`)
 - `saveStatus`: 'idle' | 'saving' | 'saved' | 'error' (debounced with 300ms delay, 3s visual feedback)
 - **Auto-persist** on all mutations via `persist()` or `persistWithStatus()`
@@ -81,7 +81,7 @@ Routes use audit `id` param (UUID) to load current audit:
 - `/audits/:id` → Detail view (edit criteria results)
 - `/audits/:id/summary` → Summary stats view
 - `/audits/:id/report` → Report preview (can export from here)
-- Views call `store.setCurrentAudit(id)` in setup
+- Views call `store.openAudit(id)` from a `watch` on `route.params.id`
 
 ### 5. DSFR Component Usage
 Project uses `@gouvminint/vue-dsfr` (Vue 3 wrapper for French Design System):
@@ -101,8 +101,7 @@ Project uses `@gouvminint/vue-dsfr` (Vue 3 wrapper for French Design System):
 - **Lightweight frontend scanning** using axe-core (no backend required)
 - Runs in iframe to isolate scan from main app
 - Detects ~70-80% of automated-detectable WCAG violations
-- Maps axe violations to audit criteria automatically
-- Suggests pre-filling criteria with status based on scan results
+- Maps axe violations to audit criteria (`axeRuleToCriterion`); suggests `nc` only (no violation never means conforme)
 - **Limitations**: Requires public URLs (no auth), no CORS restrictions
 - See `docs/AUTOMATED_SCANNING.md` for full documentation
 
@@ -114,7 +113,7 @@ Project uses `@gouvminint/vue-dsfr` (Vue 3 wrapper for French Design System):
 |------|---------|
 | `src/stores/auditStore.ts` | Central Pinia store; all audit mutations must go here |
 | `src/types/audit.ts` + `criterion.ts` | Domain interfaces; status enum logic lives here |
-| `src/data/initialCriteria.ts` | Immutable list of ~40+ French accessibility criteria |
+| `src/data/initialCriteria.ts` | Immutable list of the 15 accessibility criteria |
 | `src/router/index.ts` | Route definitions; note lazy-loaded views |
 | `src/components/layout/AppLayout.vue` | Layout shell for all views |
 | `src/components/layout/SaveStatusAlert.vue` | DSFR alert component for auto-save feedback (saving/saved/error) |
@@ -153,7 +152,7 @@ npm run type-check             # TypeScript validation (Vue 3.x strict mode)
 5. **Timestamps are ISO strings**, not Dates (for JSON serialization)
 6. **French language throughout** — all labels, validation messages, UI text in French
 7. **UUID for audit IDs** — generated via `uuid` package; never hardcode
-8. **Utility function pattern**: Export helpers (json/html) use inline helpers (sanitizeFilename, statusLabel, escHtml)
+8. **Utility function pattern**: Export helpers (json/html) use shared helpers from `exportCommon.ts` (sanitizeFilename, statusLabel, downloadBlob) plus `escHtml`
 9. **No API calls** — this is fully client-side; persistence = hybrid IndexedDB/localStorage only
 10. **Computed properties are eager** — avoid expensive calculations in templates
 
@@ -169,6 +168,6 @@ npm run type-check             # TypeScript validation (Vue 3.x strict mode)
 | Add status calculation | Enhance `calculateSummary()` |
 | Change UI layout/header | Edit `AppLayout.vue`, `AppHeader.vue`, `AppFooter.vue` |
 | Add new route | Edit `router/index.ts`, create view in `views/` |
-| Map new axe rules to criteria | Update `violationMap` in `accessibilityScanner.ts` |
+| Map new axe rules to criteria | Update `axeRuleToCriterion` in `accessibilityScanner.ts` |
 | Implement backend scanning (Phase 2) | Create Node.js service with Playwright + axe-core (see AUTOMATED_SCANNING.md) |
 
