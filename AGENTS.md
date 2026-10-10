@@ -138,6 +138,7 @@ Project uses `@gouvminint/vue-dsfr` (Vue 3 wrapper for French Design System):
 npm install                    # Install dependencies
 npm run dev                    # Start Vite dev server (localhost:5173); proxies /api to the scan service
 npm run scan-server            # Scan service (needs `npx playwright install chromium` once)
+npm run dev:all                # Dev server + scan service in parallel
 npm run build                  # Prod build: vue-tsc type-check + Vite bundle
 npm run type-check             # TypeScript validation
 npx vitest run                 # Unit tests (tests/unit)
