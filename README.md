@@ -45,6 +45,7 @@ Le serveur de développement redirige `/api` vers ce service. Sans lui, seules l
 | `npm run type-check` | Vérification des types seule |
 | `npm run test:unit` | Tests unitaires (Vitest, mode watch) ; `npx vitest run` pour une exécution unique |
 | `npm run scan-server` | Service de scan (Playwright + axe-core) |
+| `npm run dev:all` | Lance le front et le service de scan en parallèle |
 
 ## Structure
 
