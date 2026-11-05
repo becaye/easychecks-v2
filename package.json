@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "type-check": "vue-tsc --build --force",
     "test:unit": "vitest",
-    "scan-server": "node server/index.mjs"
+    "scan-server": "node server/index.mjs",
+    "dev:all": "concurrently -n web,scan -c blue,green \"npm:dev\" \"npm:scan-server\""
   },
   "dependencies": {
     "@axe-core/playwright": "^4.13.0",
@@ -28,6 +29,7 @@
     "@vitejs/plugin-vue": "^6.0.7",
     "@vue/test-utils": "^2.4.11",
     "@vue/tsconfig": "^0.9.1",
+    "concurrently": "^10.0.6",
     "jsdom": "^29.1.1",
     "typescript": "^6.0.3",
     "vite": "^8.0.16",

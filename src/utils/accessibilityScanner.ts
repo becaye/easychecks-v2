@@ -66,6 +66,9 @@ export async function scanAccessibility(url: string): Promise<AccessibilityScanR
   return transformAxeResults(url, results)
 }
 
+const SERVICE_UNREACHABLE_MESSAGE =
+  'Le service de scan est injoignable. Démarrez-le avec « npm run scan-server » puis réessayez.'
+
 async function scanViaApi(url: URL): Promise<AxeResults> {
   let response: Response
   try {
@@ -76,13 +79,15 @@ async function scanViaApi(url: URL): Promise<AxeResults> {
       signal: AbortSignal.timeout(60_000),
     })
   } catch {
-    throw new Error(
-      'Le service de scan est injoignable. Démarrez-le avec « npm run scan-server » puis réessayez.',
-    )
+    throw new Error(SERVICE_UNREACHABLE_MESSAGE)
   }
 
   const body = await response.json().catch(() => null)
   if (!response.ok) {
+    // A 502/503/504 without our JSON error comes from a proxy (Vite, nginx...) that can't reach the service
+    if (!body?.error && [502, 503, 504].includes(response.status)) {
+      throw new Error(SERVICE_UNREACHABLE_MESSAGE)
+    }
     throw new Error(body?.error ?? `Le service de scan a répondu avec le statut ${response.status}.`)
   }
   return body as AxeResults
